@@ -1,0 +1,229 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>AI Receptionist Setup</title>
+<style>
+  :root {
+    --bg: #0f1115; --card: #171a21; --border: #262b36; --text: #e8eaed;
+    --muted: #9aa2b1; --accent: #6c8cff; --accent-text: #0b0d12; --ok: #3ecf8e; --err: #ff6b6b;
+  }
+  * { box-sizing: border-box; }
+  body {
+    background: var(--bg); color: var(--text); font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    margin: 0; padding: 40px 20px 80px;
+  }
+  .wrap { max-width: 640px; margin: 0 auto; }
+  h1 { font-size: 22px; margin-bottom: 4px; }
+  p.sub { color: var(--muted); margin-top: 0; margin-bottom: 32px; font-size: 14px; }
+  .card {
+    background: var(--card); border: 1px solid var(--border); border-radius: 12px;
+    padding: 24px; margin-bottom: 20px;
+  }
+  .card h2 { font-size: 15px; margin: 0 0 16px; color: var(--text); }
+  .card h2 span { color: var(--muted); font-weight: 400; }
+  label { display: block; font-size: 13px; color: var(--muted); margin: 14px 0 6px; }
+  label:first-of-type { margin-top: 0; }
+  input, textarea, select {
+    width: 100%; background: #0d0f14; border: 1px solid var(--border); color: var(--text);
+    padding: 10px 12px; border-radius: 8px; font-size: 14px; font-family: inherit;
+  }
+  textarea { min-height: 90px; resize: vertical; }
+  input:focus, textarea:focus { outline: none; border-color: var(--accent); }
+  .row { display: flex; gap: 12px; }
+  .row > div { flex: 1; }
+  button {
+    background: var(--accent); color: var(--accent-text); border: none; padding: 12px 20px;
+    border-radius: 8px; font-size: 14px; font-weight: 600; cursor: pointer; width: 100%;
+  }
+  button:hover { opacity: 0.9; }
+  #status { margin-top: 16px; font-size: 14px; min-height: 20px; }
+  #status.ok { color: var(--ok); }
+  #status.err { color: var(--err); }
+  .webhooks { display: none; }
+  .webhooks.show { display: block; }
+  .webhook-row { margin-bottom: 12px; }
+  .webhook-row label { margin-bottom: 4px; }
+  .copyline {
+    display: flex; gap: 8px; align-items: center; background: #0d0f14; border: 1px solid var(--border);
+    border-radius: 8px; padding: 8px 10px; font-family: ui-monospace, monospace; font-size: 12px;
+  }
+  .copyline span { flex: 1; overflow-x: auto; white-space: nowrap; }
+  .copyline button { width: auto; padding: 6px 10px; font-size: 12px; flex-shrink: 0; }
+  .hint { font-size: 12px; color: var(--muted); margin-top: 6px; }
+  .ngrok-note { font-size: 13px; color: var(--muted); margin-bottom: 12px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>AI Receptionist Setup</h1>
+  <p class="sub">Fill this in once. It saves locally to this machine — nothing is sent anywhere except the fields you use to actually run the demo.</p>
+
+  <form id="setupForm">
+    <div class="card">
+      <h2>Business</h2>
+      <label>Business name</label>
+      <input name="businessName" placeholder="Acme Dental" required />
+
+      <label>Twilio phone number for this business <span style="color:var(--muted); font-weight:400;">(the one people call)</span></label>
+      <input name="twilioNumber" placeholder="+15551234567" />
+
+      <label>Greeting <span style="color:var(--muted); font-weight:400;">(what the AI says when it picks up)</span></label>
+      <textarea name="greeting" placeholder="Thanks for calling Acme Dental. How can I help you today?"></textarea>
+
+      <label>Business details / FAQs <span style="color:var(--muted); font-weight:400;">(hours, services, tone — this shapes how the AI answers)</span></label>
+      <textarea name="systemPrompt" style="min-height:140px" placeholder="You are the AI receptionist for Acme Dental. Hours: Mon-Fri 9-5. Services: cleanings, fillings, whitening. Keep replies to 1-2 short sentences since this is a phone call. If asked to book, say you'll text a link after the call."></textarea>
+
+      <label>Follow-up text <span style="color:var(--muted); font-weight:400;">(sent automatically after every call)</span></label>
+      <textarea name="followUpSms" placeholder="Thanks for calling Acme Dental! Book here: https://... Reply STOP to opt out."></textarea>
+
+      <label>Ring a human first? <span style="color:var(--muted); font-weight:400;">(optional — leave blank to skip straight to AI)</span></label>
+      <input name="humanNumber" placeholder="+15559990000" />
+    </div>
+
+    <div class="card">
+      <h2>AI API <span>(freellmapi)</span></h2>
+      <label>Endpoint URL</label>
+      <input name="freellmApiUrl" placeholder="http://localhost:3001/v1/chat/completions" />
+      <label>API key</label>
+      <input name="freellmApiKey" placeholder="Freellmapi-..." />
+      <label>Model <span style="color:var(--muted); font-weight:400;">(optional)</span></label>
+      <input name="freellmModel" placeholder="gpt-4o-mini" />
+    </div>
+
+    <div class="card">
+      <h2>Twilio account</h2>
+      <div class="row">
+        <div>
+          <label>Account SID</label>
+          <input name="twilioAccountSid" placeholder="ACxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx" />
+        </div>
+        <div>
+          <label>Auth token</label>
+          <input name="twilioAuthToken" type="password" placeholder="••••••••" />
+        </div>
+      </div>
+    </div>
+
+    <button type="submit">Save configuration</button>
+    <div id="status"></div>
+  </form>
+
+  <div class="card webhooks" id="webhooksCard">
+    <h2>Paste these into Twilio</h2>
+    <div class="ngrok-note" id="ngrokNote">Checking for a running ngrok tunnel…</div>
+    <div class="webhook-row">
+      <label>Voice webhook ("A call comes in")</label>
+      <div class="copyline"><span id="voiceUrl">—</span><button type="button" onclick="copyText('voiceUrl')">Copy</button></div>
+    </div>
+    <div class="webhook-row">
+      <label>Status webhook ("Call status changes")</label>
+      <div class="copyline"><span id="statusUrl">—</span><button type="button" onclick="copyText('statusUrl')">Copy</button></div>
+    </div>
+    <p class="hint">In the Twilio Console: Phone Numbers → your number → paste the first URL under "A call comes in" and the second under "Call status changes", both as HTTP POST.</p>
+  </div>
+</div>
+
+<script>
+let currentTenantId = null;
+
+async function loadExisting() {
+  const res = await fetch('/setup/data');
+  const data = await res.json();
+  const form = document.getElementById('setupForm');
+  const c = data.config || {};
+  for (const key of ['freellmApiUrl', 'freellmApiKey', 'freellmModel', 'twilioAccountSid', 'twilioAuthToken']) {
+    if (c[key] && form[key]) form[key].value = c[key];
+  }
+  if (data.tenants && data.tenants.length) {
+    const t = data.tenants[0];
+    currentTenantId = t.id;
+    for (const key of ['businessName', 'twilioNumber', 'greeting', 'systemPrompt', 'followUpSms', 'humanNumber']) {
+      if (t[key] && form[key]) form[key].value = t[key];
+    }
+  }
+}
+
+function copyText(id) {
+  const text = document.getElementById(id).textContent;
+  navigator.clipboard.writeText(text);
+}
+
+async function updateWebhookLinks(tenantId) {
+  const card = document.getElementById('webhooksCard');
+  const note = document.getElementById('ngrokNote');
+  card.classList.add('show');
+
+  let base = null;
+  try {
+    const r = await fetch('/setup/ngrok-url');
+    const d = await r.json();
+    base = d.url;
+  } catch (e) {}
+
+  if (base) {
+    note.textContent = 'Found your ngrok tunnel — these are ready to paste:';
+    document.getElementById('voiceUrl').textContent = `${base}/voice/${tenantId}`;
+    document.getElementById('statusUrl').textContent = `${base}/voice/${tenantId}/status`;
+  } else {
+    note.textContent = "No ngrok tunnel detected. Start ngrok (npx ngrok http 3000), then reload this page — or paste your tunnel URL in front of the paths below yourself:";
+    document.getElementById('voiceUrl').textContent = `/voice/${tenantId}`;
+    document.getElementById('statusUrl').textContent = `/voice/${tenantId}/status`;
+  }
+}
+
+document.getElementById('setupForm').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const form = e.target;
+  const fd = new FormData(form);
+  const get = (k) => fd.get(k) || '';
+
+  const payload = {
+    config: {
+      freellmApiUrl: get('freellmApiUrl'),
+      freellmApiKey: get('freellmApiKey'),
+      freellmModel: get('freellmModel'),
+      twilioAccountSid: get('twilioAccountSid'),
+      twilioAuthToken: get('twilioAuthToken')
+    },
+    tenant: {
+      id: currentTenantId,
+      businessName: get('businessName'),
+      twilioNumber: get('twilioNumber'),
+      greeting: get('greeting'),
+      systemPrompt: get('systemPrompt'),
+      followUpSms: get('followUpSms'),
+      humanNumber: get('humanNumber')
+    }
+  };
+
+  const status = document.getElementById('status');
+  status.textContent = 'Saving…';
+  status.className = '';
+
+  try {
+    const res = await fetch('/setup/save', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+    const data = await res.json();
+    if (data.ok) {
+      currentTenantId = data.tenant ? data.tenant.id : currentTenantId;
+      status.textContent = 'Saved. Your webhook URLs are below.';
+      status.className = 'ok';
+      if (currentTenantId) updateWebhookLinks(currentTenantId);
+    } else {
+      status.textContent = 'Something went wrong saving.';
+      status.className = 'err';
+    }
+  } catch (err) {
+    status.textContent = 'Could not save — is the server running?';
+    status.className = 'err';
+  }
+});
+
+loadExisting();
+</script>
+</body>
+</html>
